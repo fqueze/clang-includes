@@ -1,0 +1,1452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clang Compilation Time Dashboard</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+
+        .stats {
+            display: flex;
+            gap: 30px;
+            margin-top: 15px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+        }
+
+        .tab {
+            background: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            transition: all 0.2s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .tab.active {
+            background: #0066cc;
+            color: white;
+            box-shadow: 0 4px 8px rgba(0,102,204,0.3);
+        }
+
+        .tab:hover:not(.active) {
+            background: #e8e8e8;
+        }
+
+        .content {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .table-container {
+            display: none;
+        }
+
+        .table-container.active {
+            display: block;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        th {
+            background: #f8f8f8;
+            padding: 12px 16px;
+            text-align: left;
+            font-weight: 600;
+            color: #333;
+            border-bottom: 2px solid #e0e0e0;
+            cursor: pointer;
+            user-select: none;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        th:hover {
+            background: #ececec;
+        }
+
+        th .sort-arrow {
+            float: right;
+            opacity: 0.3;
+        }
+
+        th.sorted .sort-arrow {
+            opacity: 1;
+        }
+
+        td {
+            padding: 10px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 13px;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .filename {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+            color: #0066cc;
+            font-size: 12px;
+        }
+
+        .number {
+            text-align: right;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+            font-size: 12px;
+        }
+
+        .percentage {
+            color: #d32f2f;
+            font-weight: 600;
+        }
+
+        .profile-link, .cu-profile-link {
+            color: #0066cc;
+        }
+
+        .profile-link:hover, .cu-profile-link:hover {
+            color: #0052a3;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .search-box {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            width: 300px;
+            margin-bottom: 15px;
+        }
+
+        .bar-cell {
+            position: relative;
+            padding: 0 !important;
+            overflow: hidden;
+        }
+
+        .bar-container {
+            display: flex;
+            align-items: center;
+            height: 100%;
+            padding: 10px 16px;
+        }
+
+        .bar-bg {
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            background: linear-gradient(90deg, #ffebee 0%, #ffcdd2 100%);
+            z-index: 0;
+        }
+
+        .bar-text {
+            position: relative;
+            z-index: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Clang Compilation Time Dashboard</h1>
+        <div class="stats">
+            <div class="stat-item">
+                <span class="stat-value" id="totalCUs">-</span>
+                <span>Compilation Units</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-value" id="totalIncludes">-</span>
+                <span>Total Includes</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-value" id="uniqueHeaders">-</span>
+                <span>Unique Headers</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-value" id="totalBuildTime">-</span>
+                <span>Total Build Time</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="tabs">
+        <button class="tab active" onclick="switchTab('headers')">Headers (by Rebuild Impact)</button>
+        <button class="tab" onclick="switchTab('compilationUnits')">Compilation Units</button>
+    </div>
+
+    <div class="content">
+        <div id="headers" class="table-container active">
+            <div style="margin: 15px; display: flex; gap: 15px; align-items: center;">
+                <input type="text" id="headerSearch" class="search-box" placeholder="Search headers..." style="margin: 0;">
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" id="filterSDK" checked onchange="renderHeadersTable()">
+                    <span>Only show SDK files directly included by our code</span>
+                </label>
+            </div>
+            <table>
+                <colgroup>
+                    <col style="width: 50%;">
+                    <col style="width: 20%;">
+                    <col style="width: 15%;">
+                    <col style="width: 15%;">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th onclick="sortTable('headers', 0)">Header File <span class="sort-arrow">▼</span></th>
+                        <th onclick="sortTable('headers', 1)">Rebuild Impact % <span class="sort-arrow">▼</span></th>
+                        <th onclick="sortTable('headers', 2)">Include Count <span class="sort-arrow">▼</span></th>
+                        <th onclick="sortTable('headers', 3)">Max Include Tree Size <span class="sort-arrow">▼</span></th>
+                    </tr>
+                </thead>
+                <tbody id="headersBody">
+                    <tr><td colspan="4" class="loading">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div id="compilationUnits" class="table-container">
+            <input type="text" id="cuSearch" class="search-box" placeholder="Search compilation units..." style="margin: 15px;">
+            <table>
+                <colgroup>
+                    <col style="width: 40%;">
+                    <col style="width: 12%;">
+                    <col style="width: 18%;">
+                    <col style="width: 15%;">
+                    <col style="width: 15%;">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th onclick="sortTable('cu', 0)">Compilation Unit <span class="sort-arrow">▼</span></th>
+                        <th onclick="sortTable('cu', 1)">Build Time <span class="sort-arrow">▼</span></th>
+                        <th onclick="sortTable('cu', 2)">% in Includes <span class="sort-arrow">▼</span></th>
+                        <th onclick="sortTable('cu', 3)">Include Tree Size <span class="sort-arrow">▼</span></th>
+                        <th onclick="sortTable('cu', 4)">Time in Includes <span class="sort-arrow">▼</span></th>
+                    </tr>
+                </thead>
+                <tbody id="cuBody">
+                    <tr><td colspan="5" class="loading">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let dashboardData = null;
+        let headerData = [];
+        let cuData = [];
+        let currentTab = 'headers';
+        let expandedHeaders = new Set(); // Track which headers are expanded
+        let expandedCUIncludes = new Set(); // Track which CU includes are expanded (key: "cuId-fileId")
+        let filesWithIncluders = new Set(); // Pre-computed set of fileIds that have includers
+        let sdkFileIds = new Set(); // Pre-computed set of fileIds that are SDK files
+
+        // Load the dashboard JSON
+        async function loadData() {
+            try {
+                const response = await fetch('build-dashboard.json');
+                dashboardData = await response.json();
+                processData();
+                renderStats();
+                loadStateFromURL();
+                renderTables();
+            } catch (error) {
+                console.error('Error loading data:', error);
+                document.getElementById('headersBody').innerHTML =
+                    '<tr><td colspan="4" class="loading">Error loading data</td></tr>';
+            }
+        }
+
+        // URL hash management for sharing links
+        function updateURLHash() {
+            const params = new URLSearchParams();
+
+            if (currentTab !== 'headers') {
+                params.set('tab', currentTab);
+            }
+
+            const headerSearch = document.getElementById('headerSearch')?.value || '';
+            if (headerSearch) {
+                params.set('headerSearch', headerSearch);
+            }
+
+            const cuSearch = document.getElementById('cuSearch')?.value || '';
+            if (cuSearch) {
+                params.set('cuSearch', cuSearch);
+            }
+
+            const filterSDK = document.getElementById('filterSDK')?.checked ?? true;
+            // Only add to URL if unchecked (since checked is the default)
+            if (!filterSDK) {
+                params.set('filterSDK', '0');
+            }
+
+            const hash = params.toString();
+            window.location.hash = hash ? '#' + hash : '';
+        }
+
+        function loadStateFromURL() {
+            const hash = window.location.hash.slice(1);
+            if (!hash) return;
+
+            const params = new URLSearchParams(hash);
+
+            const tab = params.get('tab');
+            if (tab && (tab === 'headers' || tab === 'compilationUnits')) {
+                currentTab = tab;
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.table-container').forEach(t => t.classList.remove('active'));
+
+                const tabButton = document.querySelector(`.tab[onclick*="'${tab}'"]`);
+                if (tabButton) tabButton.classList.add('active');
+
+                const tabContent = document.getElementById(tab);
+                if (tabContent) tabContent.classList.add('active');
+            }
+
+            const headerSearch = params.get('headerSearch');
+            if (headerSearch && document.getElementById('headerSearch')) {
+                document.getElementById('headerSearch').value = headerSearch;
+            }
+
+            const cuSearch = params.get('cuSearch');
+            if (cuSearch && document.getElementById('cuSearch')) {
+                document.getElementById('cuSearch').value = cuSearch;
+            }
+
+            const filterSDK = params.get('filterSDK');
+            if (document.getElementById('filterSDK')) {
+                // Default to checked, only uncheck if explicitly set to '0'
+                document.getElementById('filterSDK').checked = filterSDK !== '0';
+            }
+        }
+
+        function isSDKFile(fileName) {
+            return fileName.includes('/.mozbuild/') ||
+                   fileName.includes('/usr/include/') ||
+                   fileName.includes('/usr/lib/') ||
+                   fileName.startsWith('/usr/') ||
+                   fileName.includes('sysroot-');
+        }
+
+        function getDirectIncluders(fileId) {
+            // Find all files that directly include this file
+            const includers = new Map(); // includerId -> { includeCount, affectedCUs }
+
+            for (let cuId = 0; cuId < dashboardData.includes.fileIds.length; cuId++) {
+                const fileIds = dashboardData.includes.fileIds[cuId];
+                const parentFileIds = dashboardData.includes.parentFileIds[cuId];
+
+                for (let i = 0; i < fileIds.length; i++) {
+                    if (fileIds[i] === fileId) {
+                        const parentId = parentFileIds[i];
+                        if (parentId !== -1) {
+                            // This file is included by parentId
+                            if (!includers.has(parentId)) {
+                                includers.set(parentId, {
+                                    includeCount: 0,
+                                    affectedCUs: new Set()
+                                });
+                            }
+                            includers.get(parentId).includeCount++;
+                            includers.get(parentId).affectedCUs.add(cuId);
+                        }
+                    }
+                }
+            }
+
+            return includers;
+        }
+
+        function processData() {
+            // Process headers
+            const headerMap = new Map(); // fileId -> { includeCount, affectedCUs, maxTreeSize, totalTime, directlyIncludedByOurCode }
+
+            // Pre-compute which files are SDK files (once for all files)
+            sdkFileIds.clear();
+            for (let fileId = 0; fileId < dashboardData.tables.files.length; fileId++) {
+                if (isSDKFile(dashboardData.tables.files[fileId])) {
+                    sdkFileIds.add(fileId);
+                }
+            }
+
+            // Pre-compute which files are included by other files (have includers)
+            filesWithIncluders.clear();
+            for (let cuId = 0; cuId < dashboardData.includes.fileIds.length; cuId++) {
+                const fileIds = dashboardData.includes.fileIds[cuId];
+                const parentFileIds = dashboardData.includes.parentFileIds[cuId];
+
+                for (let i = 0; i < fileIds.length; i++) {
+                    const parentId = parentFileIds[i];
+                    if (parentId !== -1) {
+                        // fileIds[i] is included by parentId, so parentId has includers
+                        filesWithIncluders.add(fileIds[i]);
+                    }
+                }
+            }
+
+            // Count includes and affected CUs for each header
+            for (let cuId = 0; cuId < dashboardData.includes.fileIds.length; cuId++) {
+                const cuFileIds = dashboardData.includes.fileIds[cuId];
+                const parentFileIds = dashboardData.includes.parentFileIds[cuId];
+                const cuBuildTime = dashboardData.compilationUnits.buildTimes[cuId];
+                const seenInThisCU = new Set();
+
+                for (let i = 0; i < cuFileIds.length; i++) {
+                    const fileId = cuFileIds[i];
+
+                    let header = headerMap.get(fileId);
+                    if (!header) {
+                        header = {
+                            includeCount: 0,
+                            affectedCUs: new Set(),
+                            maxTreeSize: 0,
+                            maxTreeSizeCU: -1,
+                            rebuildTime: 0,
+                            directlyIncludedByOurCode: false
+                        };
+                        headerMap.set(fileId, header);
+                    }
+
+                    header.includeCount++;
+                    seenInThisCU.add(fileId);
+
+                    // Add rebuild time incrementally (only once per CU)
+                    if (!header.affectedCUs.has(cuId)) {
+                        header.affectedCUs.add(cuId);
+                        header.rebuildTime += cuBuildTime;
+                    }
+
+                    // Check if this is an SDK file directly included by our code
+                    if (sdkFileIds.has(fileId)) {
+                        const parentId = parentFileIds[i];
+                        if (parentId === -1 || !sdkFileIds.has(parentId)) {
+                            // Root include or parent is not SDK - our code includes this SDK file
+                            header.directlyIncludedByOurCode = true;
+                        }
+                    }
+                }
+
+                // Calculate tree sizes for this CU in one pass (bottom-up)
+                const treeSizes = new Map();
+                for (let i = cuFileIds.length - 1; i >= 0; i--) {
+                    const fileId = cuFileIds[i];
+                    const parentId = parentFileIds[i];
+
+                    if (!treeSizes.has(fileId)) {
+                        treeSizes.set(fileId, 0);
+                    }
+
+                    if (parentId !== -1) {
+                        const currentSize = treeSizes.get(parentId) || 0;
+                        treeSizes.set(parentId, currentSize + 1 + treeSizes.get(fileId));
+                    }
+                }
+
+                // Update max tree sizes
+                for (const fileId of seenInThisCU) {
+                    const treeSize = treeSizes.get(fileId) || 0;
+                    const header = headerMap.get(fileId);
+                    if (treeSize > header.maxTreeSize) {
+                        header.maxTreeSize = treeSize;
+                        header.maxTreeSizeCU = cuId;
+                    }
+                }
+            }
+
+            // Calculate total build time
+            const totalBuildTime = dashboardData.compilationUnits.buildTimes.reduce((a, b) => a + b, 0);
+
+            // Convert to array with rebuild impact (rebuild time already pre-computed)
+            headerData = Array.from(headerMap.entries()).map(([fileId, data]) => {
+                const rebuildPercent = (data.rebuildTime / totalBuildTime) * 100;
+
+                return {
+                    fileName: dashboardData.tables.files[fileId],
+                    fileId: fileId,
+                    rebuildPercent: rebuildPercent,
+                    includeCount: data.includeCount,
+                    maxTreeSize: data.maxTreeSize,
+                    maxTreeSizeCU: data.maxTreeSizeCU,
+                    isSDK: sdkFileIds.has(fileId),
+                    directlyIncludedByOurCode: data.directlyIncludedByOurCode
+                };
+            });
+
+            // Sort by rebuild impact
+            headerData.sort((a, b) => b.rebuildPercent - a.rebuildPercent);
+
+            // Don't process CU data yet - do it lazily when tab is opened
+            cuData = null;
+        }
+
+        function ensureCUDataProcessed() {
+            if (cuData !== null) return;
+
+            // Process compilation units lazily
+            cuData = [];
+            for (let cuId = 0; cuId < dashboardData.compilationUnits.names.length; cuId++) {
+                const includeTreeSize = dashboardData.includes.fileIds[cuId].length;
+                const buildTime = dashboardData.compilationUnits.buildTimes[cuId];
+
+                // Calculate time range covered by direct includes (parentFileId === -1)
+                const parentFileIds = dashboardData.includes.parentFileIds[cuId];
+                const durations = dashboardData.includes.durations[cuId];
+                const startTimes = dashboardData.includes.startTimes[cuId];
+
+                // Decompress start times
+                const actualStartTimes = [];
+                let currentTime = 0;
+                for (const diff of startTimes) {
+                    currentTime += diff;
+                    actualStartTimes.push(currentTime);
+                }
+
+                // Find time range covered by direct includes
+                let minStartTime = Infinity;
+                let maxEndTime = 0;
+                for (let i = 0; i < parentFileIds.length; i++) {
+                    if (parentFileIds[i] === -1) {
+                        const startTime = actualStartTimes[i];
+                        const endTime = startTime + durations[i];
+                        minStartTime = Math.min(minStartTime, startTime);
+                        maxEndTime = Math.max(maxEndTime, endTime);
+                    }
+                }
+
+                const timeInIncludes = minStartTime !== Infinity ? maxEndTime - minStartTime : 0;
+                const percentInIncludes = (timeInIncludes / buildTime) * 100;
+
+                cuData.push({
+                    cuId: cuId,
+                    name: dashboardData.compilationUnits.names[cuId],
+                    includeTreeSize: includeTreeSize,
+                    buildTime: buildTime,
+                    timeInIncludes: timeInIncludes,
+                    percentInIncludes: percentInIncludes
+                });
+            }
+
+            // Sort by time in includes
+            cuData.sort((a, b) => b.timeInIncludes - a.timeInIncludes);
+        }
+
+        function renderStats() {
+            document.getElementById('totalCUs').textContent =
+                dashboardData.metadata.totalCompilationUnits.toLocaleString();
+            document.getElementById('totalIncludes').textContent =
+                dashboardData.metadata.totalIncludes.toLocaleString();
+            document.getElementById('uniqueHeaders').textContent =
+                dashboardData.metadata.totalUniqueHeaders.toLocaleString();
+
+            const totalBuildTime = dashboardData.compilationUnits.buildTimes.reduce((a, b) => a + b, 0);
+            document.getElementById('totalBuildTime').textContent =
+                formatTime(totalBuildTime);
+        }
+
+        function formatTime(ms) {
+            if (ms < 1000) return `${ms.toFixed(0)}ms`;
+            const sec = ms / 1000;
+            if (sec < 60) return `${sec.toFixed(1)}s`;
+            const min = sec / 60;
+            if (min < 60) return `${min.toFixed(1)}min`;
+            const hours = min / 60;
+            return `${hours.toFixed(1)}h`;
+        }
+
+        function renderTables() {
+            if (currentTab === 'headers') {
+                renderHeadersTable();
+            } else if (currentTab === 'compilationUnits') {
+                ensureCUDataProcessed();
+                renderCUTable();
+            }
+        }
+
+        function toggleHeaderExpanded(event, fileId, rowElement) {
+            // Don't expand if clicking on a profile link
+            if (event.target.classList.contains('profile-link')) {
+                return;
+            }
+
+            event.stopPropagation();
+
+            const isCurrentlyExpanded = expandedHeaders.has(fileId);
+
+            if (isCurrentlyExpanded) {
+                // Collapse: remove all descendant rows (not just direct children)
+                expandedHeaders.delete(fileId);
+
+                const currentDepth = parseInt(rowElement.dataset.depth);
+
+                // Remove all rows that are descendants (higher depth and appear after this row)
+                let nextRow = rowElement.nextElementSibling;
+                while (nextRow && parseInt(nextRow.dataset.depth) > currentDepth) {
+                    // Also remove from expanded set if it was expanded
+                    const nextFileId = parseInt(nextRow.dataset.fileId);
+                    if (expandedHeaders.has(nextFileId)) {
+                        expandedHeaders.delete(nextFileId);
+                    }
+
+                    const toRemove = nextRow;
+                    nextRow = nextRow.nextElementSibling;
+                    toRemove.remove();
+                }
+
+                // Update icon
+                const iconSpan = rowElement.querySelector('.expand-icon');
+                if (iconSpan) iconSpan.textContent = '▶';
+            } else {
+                // Expand: add child rows
+                expandedHeaders.add(fileId);
+
+                // Update icon
+                const iconSpan = rowElement.querySelector('.expand-icon');
+                if (iconSpan) iconSpan.textContent = '▼';
+
+                // Get children
+                const includers = getDirectIncluders(fileId);
+                if (includers.size > 0) {
+                    const totalBuildTime = dashboardData.compilationUnits.buildTimes.reduce((a, b) => a + b, 0);
+                    const maxRebuildPercent = Math.max(...headerData.map(h => h.rebuildPercent));
+                    const depth = parseInt(rowElement.dataset.depth) + 1;
+
+                    // Convert includers to header format
+                    const childHeaders = Array.from(includers.entries()).map(([includerId, data]) => {
+                        const rebuildTime = Array.from(data.affectedCUs)
+                            .reduce((sum, cuId) => sum + dashboardData.compilationUnits.buildTimes[cuId], 0);
+                        const rebuildPercent = (rebuildTime / totalBuildTime) * 100;
+
+                        return {
+                            fileName: dashboardData.tables.files[includerId],
+                            fileId: includerId,
+                            rebuildPercent: rebuildPercent,
+                            includeCount: data.includeCount,
+                            maxTreeSize: 0,
+                            isSDK: sdkFileIds.has(includerId),
+                            directlyIncludedByOurCode: false
+                        };
+                    });
+
+                    // Sort children by rebuild impact
+                    childHeaders.sort((a, b) => b.rebuildPercent - a.rebuildPercent);
+
+                    // Create and insert child rows
+                    let insertAfter = rowElement;
+                    for (const child of childHeaders) {
+                        const childRow = createHeaderRow(child, depth, maxRebuildPercent, fileId);
+                        insertAfter.insertAdjacentElement('afterend', childRow);
+                        insertAfter = childRow;
+                    }
+                }
+            }
+        }
+
+        function createHeaderRow(header, depth, maxRebuildPercent, parentId = null) {
+            const hasChildren = filesWithIncluders.has(header.fileId);
+            const indent = depth * 20;
+            const expandIcon = hasChildren ? '▶' : '  ';
+
+            const tr = document.createElement('tr');
+            if (parentId !== null) {
+                tr.classList.add('child-row');
+                tr.dataset.parentId = parentId;
+            }
+            tr.dataset.depth = depth;
+            tr.dataset.fileId = header.fileId;
+            if (hasChildren) {
+                tr.style.cursor = 'pointer';
+                tr.onclick = (e) => toggleHeaderExpanded(e, header.fileId, tr);
+            }
+
+            tr.innerHTML = `
+                <td class="filename" style="padding-left: ${indent + 16}px">
+                    <span class="expand-icon" style="display: inline-block; width: 12px; margin-right: 4px;">${expandIcon}</span>
+                    ${escapeHtml(header.fileName)}
+                </td>
+                <td class="bar-cell">
+                    <div class="bar-container">
+                        <div class="bar-bg" style="width: ${(header.rebuildPercent / maxRebuildPercent) * 100}%"></div>
+                        <span class="bar-text number percentage">${header.rebuildPercent.toFixed(2)}%</span>
+                    </div>
+                </td>
+                <td class="number">${header.includeCount.toLocaleString()}</td>
+                <td class="number">${header.maxTreeSize > 0 ?
+                    `<a href="#" class="profile-link" data-cu-id="${header.maxTreeSizeCU}" data-filter="${escapeHtml(header.fileName)}">${header.maxTreeSize.toLocaleString()}</a>` :
+                    '-'}</td>
+            `;
+
+            return tr;
+        }
+
+        function renderHeadersTable() {
+            const searchTerm = document.getElementById('headerSearch')?.value.toLowerCase() || '';
+            const sdkFilter = document.getElementById('filterSDK')?.checked || false;
+
+            // Clear expanded state when re-rendering
+            expandedHeaders.clear();
+
+            let filtered = headerData;
+
+            // Apply search filter
+            if (searchTerm) {
+                filtered = filtered.filter(h => h.fileName.toLowerCase().includes(searchTerm));
+            }
+
+            // Apply SDK filter
+            if (sdkFilter) {
+                filtered = filtered.filter(h => !h.isSDK || h.directlyIncludedByOurCode);
+            }
+
+            const tbody = document.getElementById('headersBody');
+            const maxRebuildPercent = filtered.length > 0 ?
+                Math.max(...filtered.map(h => h.rebuildPercent)) : 100;
+
+            // Clear and rebuild
+            tbody.innerHTML = '';
+            for (const header of filtered.slice(0, 1000)) {
+                const row = createHeaderRow(header, 0, maxRebuildPercent);
+                tbody.appendChild(row);
+            }
+
+            updateURLHash();
+        }
+
+        // Calculate tree size for a given fileId in a CU
+        function calculateIncludeTreeSize(cuId, targetFileId) {
+            const fileIds = dashboardData.includes.fileIds[cuId];
+            const parentFileIds = dashboardData.includes.parentFileIds[cuId];
+
+            // Find all occurrences of targetFileId and calculate tree sizes
+            let maxTreeSize = 0;
+
+            for (let i = 0; i < fileIds.length; i++) {
+                if (fileIds[i] === targetFileId) {
+                    // Count how many files are transitively included by this occurrence
+                    let count = 0;
+                    for (let j = i + 1; j < fileIds.length; j++) {
+                        // Check if fileIds[j] is a descendant of this occurrence
+                        // by walking up from j to see if we reach i
+                        let currentIdx = j;
+                        while (currentIdx > i) {
+                            const parentId = parentFileIds[currentIdx];
+                            if (parentId === -1) break;
+
+                            // Find the parent's index
+                            let foundParent = false;
+                            for (let k = currentIdx - 1; k >= i; k--) {
+                                if (fileIds[k] === parentId) {
+                                    currentIdx = k;
+                                    foundParent = true;
+                                    break;
+                                }
+                            }
+
+                            if (!foundParent) break;
+                            if (currentIdx === i) {
+                                count++;
+                                break;
+                            }
+                        }
+                    }
+                    maxTreeSize = Math.max(maxTreeSize, count);
+                }
+            }
+
+            return maxTreeSize;
+        }
+
+        // Get direct children of a fileId in a CU
+        function getDirectChildren(cuId, parentFileId) {
+            const fileIds = dashboardData.includes.fileIds[cuId];
+            const parentFileIds = dashboardData.includes.parentFileIds[cuId];
+            const durations = dashboardData.includes.durations[cuId];
+
+            const children = [];
+            for (let i = 0; i < fileIds.length; i++) {
+                if (parentFileIds[i] === parentFileId) {
+                    children.push({
+                        fileId: fileIds[i],
+                        fileName: dashboardData.tables.files[fileIds[i]],
+                        duration: durations[i],
+                        treeSize: calculateIncludeTreeSize(cuId, fileIds[i])
+                    });
+                }
+            }
+
+            return children;
+        }
+
+        function toggleCUExpanded(event, cuId, fileId, rowElement) {
+            // Don't expand if clicking on a profile link
+            if (event.target.classList.contains('cu-profile-link') ||
+                event.target.classList.contains('profile-link')) {
+                return;
+            }
+
+            event.stopPropagation();
+
+            const expandKey = `${cuId}-${fileId}`;
+            const isCurrentlyExpanded = expandedCUIncludes.has(expandKey);
+
+            if (isCurrentlyExpanded) {
+                // Collapse: remove all child rows
+                expandedCUIncludes.delete(expandKey);
+
+                const currentDepth = parseInt(rowElement.dataset.depth);
+
+                // Remove all rows that are children (higher depth and appear after this row)
+                let nextRow = rowElement.nextElementSibling;
+                while (nextRow && parseInt(nextRow.dataset.depth) > currentDepth) {
+                    // Also remove from expanded set if it was expanded
+                    const nextExpandKey = `${nextRow.dataset.cuId}-${nextRow.dataset.fileId}`;
+                    if (expandedCUIncludes.has(nextExpandKey)) {
+                        expandedCUIncludes.delete(nextExpandKey);
+                    }
+
+                    const toRemove = nextRow;
+                    nextRow = nextRow.nextElementSibling;
+                    toRemove.remove();
+                }
+
+                // Update icon
+                const iconSpan = rowElement.querySelector('.expand-icon');
+                if (iconSpan) iconSpan.textContent = '▶';
+            } else {
+                // Expand: add child rows
+                expandedCUIncludes.add(expandKey);
+
+                // Update icon
+                const iconSpan = rowElement.querySelector('.expand-icon');
+                if (iconSpan) iconSpan.textContent = '▼';
+
+                // Get direct children
+                const children = getDirectChildren(cuId, fileId);
+
+                // Sort by duration descending
+                children.sort((a, b) => b.duration - a.duration);
+
+                const depth = parseInt(rowElement.dataset.depth) + 1;
+                const maxTimeInIncludes = children.length > 0 ? Math.max(...children.map(inc => inc.duration)) : 1;
+
+                // Create and insert child rows
+                let insertAfter = rowElement;
+                for (const child of children) {
+                    const childData = {
+                        cuId: cuId,
+                        fileId: child.fileId,
+                        name: child.fileName,
+                        includeTreeSize: child.treeSize,
+                        buildTime: 0,
+                        timeInIncludes: child.duration,
+                        percentInIncludes: 0,
+                        hasChildren: child.treeSize > 0
+                    };
+                    const childRow = createCURow(childData, depth, maxTimeInIncludes);
+                    childRow.classList.add('child-row');
+                    insertAfter.insertAdjacentElement('afterend', childRow);
+                    insertAfter = childRow;
+                }
+            }
+        }
+
+        function createCURow(cu, depth, maxTimeInIncludes) {
+            const indent = depth * 20;
+            const hasChildren = cu.hasChildren !== false && (depth === 0 || cu.includeTreeSize > 0);
+            const expandIcon = hasChildren ? '▶' : '  ';
+
+            const tr = document.createElement('tr');
+            tr.dataset.depth = depth;
+            tr.dataset.cuId = cu.cuId;
+            tr.dataset.fileId = cu.fileId !== undefined ? cu.fileId : -1;
+
+            // Make clickable if it has children
+            if (hasChildren) {
+                tr.style.cursor = 'pointer';
+                const fileId = depth === 0 ? -1 : cu.fileId;
+                tr.onclick = (e) => toggleCUExpanded(e, cu.cuId, fileId, tr);
+            }
+
+            // Time in includes with profile link
+            let timeInIncludesCell;
+            if (depth === 0) {
+                // Top-level CU: link to profile without filter
+                timeInIncludesCell = `<a href="#" class="cu-profile-link" data-cu-id="${cu.cuId}">${formatTime(cu.timeInIncludes)}</a>`;
+            } else {
+                // Sub-row: link to profile with filter on this file
+                timeInIncludesCell = `<a href="#" class="profile-link" data-cu-id="${cu.cuId}" data-filter="${escapeHtml(cu.name)}">${formatTime(cu.timeInIncludes)}</a>`;
+            }
+
+            if (depth === 0) {
+                // Top-level row: all columns
+                const includeTreeSizeCell = cu.includeTreeSize > 0 ? cu.includeTreeSize.toLocaleString() : '-';
+
+                tr.innerHTML = `
+                    <td class="filename" style="padding-left: ${indent + 16}px">
+                        <span class="expand-icon" style="display: inline-block; width: 12px; margin-right: 4px;">${expandIcon}</span>
+                        ${escapeHtml(cu.name)}
+                    </td>
+                    <td class="number">${formatTime(cu.buildTime)}</td>
+                    <td class="bar-cell">
+                        <div class="bar-container">
+                            <div class="bar-bg" style="width: ${(cu.timeInIncludes / maxTimeInIncludes) * 100}%"></div>
+                            <span class="bar-text number percentage">${cu.percentInIncludes.toFixed(1)}%</span>
+                        </div>
+                    </td>
+                    <td class="number">${includeTreeSizeCell}</td>
+                    <td class="number">${timeInIncludesCell}</td>
+                `;
+            } else {
+                // Sub-row: merge first 3 columns (Name, Build Time, % in Includes)
+                const includeTreeSizeCell = cu.includeTreeSize > 0 ? cu.includeTreeSize.toLocaleString() : '-';
+
+                tr.innerHTML = `
+                    <td class="filename" colspan="3" style="padding-left: ${indent + 16}px">
+                        <span class="expand-icon" style="display: inline-block; width: 12px; margin-right: 4px;">${expandIcon}</span>
+                        ${escapeHtml(cu.name)}
+                    </td>
+                    <td class="number">${includeTreeSizeCell}</td>
+                    <td class="number">${timeInIncludesCell}</td>
+                `;
+            }
+
+            return tr;
+        }
+
+        function renderCUTable() {
+            ensureCUDataProcessed();
+
+            const searchTerm = document.getElementById('cuSearch')?.value.toLowerCase() || '';
+            const filtered = searchTerm ?
+                cuData.filter(cu => cu.name.toLowerCase().includes(searchTerm)) :
+                cuData;
+
+            // Clear expanded state when re-rendering
+            expandedCUIncludes.clear();
+
+            const tbody = document.getElementById('cuBody');
+            const maxTimeInIncludes = filtered.length > 0 ?
+                Math.max(...filtered.map(cu => cu.timeInIncludes)) : 1;
+
+            // Clear and rebuild
+            tbody.innerHTML = '';
+            for (const cu of filtered.slice(0, 1000)) {
+                const row = createCURow(cu, 0, maxTimeInIncludes);
+                tbody.appendChild(row);
+            }
+
+            updateURLHash();
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.table-container').forEach(t => t.classList.remove('active'));
+
+            // Find and activate the correct tab button
+            const tabButtons = document.querySelectorAll('.tab');
+            tabButtons.forEach(t => {
+                if (t.getAttribute('onclick')?.includes(`'${tab}'`)) {
+                    t.classList.add('active');
+                }
+            });
+
+            document.getElementById(tab).classList.add('active');
+
+            // Render the appropriate table when switching tabs
+            if (tab === 'compilationUnits') {
+                ensureCUDataProcessed();
+                renderCUTable();
+            } else if (tab === 'headers') {
+                renderHeadersTable();
+            }
+        }
+
+        let headersSortColumn = 1; // Default: rebuild impact
+        let headersSortAsc = false;
+        let cuSortColumn = 4; // Default: time in includes
+        let cuSortAsc = false;
+
+        function sortTable(table, column) {
+            if (table === 'headers') {
+                if (headersSortColumn === column) {
+                    headersSortAsc = !headersSortAsc;
+                } else {
+                    headersSortColumn = column;
+                    headersSortAsc = false;
+                }
+
+                headerData.sort((a, b) => {
+                    let compareValue;
+                    switch (column) {
+                        case 0: // File name
+                            compareValue = a.fileName.localeCompare(b.fileName);
+                            break;
+                        case 1: // Rebuild impact
+                            compareValue = a.rebuildPercent - b.rebuildPercent;
+                            break;
+                        case 2: // Include count
+                            compareValue = a.includeCount - b.includeCount;
+                            break;
+                        case 3: // Max tree size
+                            compareValue = a.maxTreeSize - b.maxTreeSize;
+                            break;
+                    }
+                    return headersSortAsc ? compareValue : -compareValue;
+                });
+
+                renderHeadersTable();
+            } else if (table === 'cu') {
+                ensureCUDataProcessed();
+
+                if (cuSortColumn === column) {
+                    cuSortAsc = !cuSortAsc;
+                } else {
+                    cuSortColumn = column;
+                    cuSortAsc = false;
+                }
+
+                cuData.sort((a, b) => {
+                    let compareValue;
+                    switch (column) {
+                        case 0: // Name
+                            compareValue = a.name.localeCompare(b.name);
+                            break;
+                        case 1: // Build time
+                            compareValue = a.buildTime - b.buildTime;
+                            break;
+                        case 2: // Percent in includes
+                            compareValue = a.percentInIncludes - b.percentInIncludes;
+                            break;
+                        case 3: // Include tree size
+                            compareValue = a.includeTreeSize - b.includeTreeSize;
+                            break;
+                        case 4: // Time in includes
+                            compareValue = a.timeInIncludes - b.timeInIncludes;
+                            break;
+                    }
+                    return cuSortAsc ? compareValue : -compareValue;
+                });
+
+                renderCUTable();
+            }
+
+            // Update sort arrow indicators
+            const tableElem = table === 'headers' ?
+                document.querySelector('#headers table') :
+                document.querySelector('#compilationUnits table');
+            const headers = tableElem.querySelectorAll('th');
+            headers.forEach((th, idx) => {
+                th.classList.remove('sorted');
+                const arrow = th.querySelector('.sort-arrow');
+                if (arrow) {
+                    arrow.textContent = '▼';
+                }
+            });
+
+            const sortedColumn = table === 'headers' ? headersSortColumn : cuSortColumn;
+            const isAsc = table === 'headers' ? headersSortAsc : cuSortAsc;
+            headers[sortedColumn].classList.add('sorted');
+            const arrow = headers[sortedColumn].querySelector('.sort-arrow');
+            if (arrow) {
+                arrow.textContent = isAsc ? '▲' : '▼';
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Setup search handlers
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('headerSearch')?.addEventListener('input', renderHeadersTable);
+            document.getElementById('cuSearch')?.addEventListener('input', renderCUTable);
+
+            // Event delegation for profile links in headers table
+            document.getElementById('headersBody')?.addEventListener('click', (e) => {
+                if (e.target.classList.contains('profile-link')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const cuId = parseInt(e.target.dataset.cuId);
+                    const filter = e.target.dataset.filter;
+                    openCUProfile(cuId, filter);
+                }
+            });
+
+            // Event delegation for profile links in CU table
+            document.getElementById('cuBody')?.addEventListener('click', (e) => {
+                if (e.target.classList.contains('cu-profile-link')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const cuId = parseInt(e.target.dataset.cuId);
+                    openCUProfile(cuId);
+                } else if (e.target.classList.contains('profile-link')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const cuId = parseInt(e.target.dataset.cuId);
+                    const filter = e.target.dataset.filter;
+                    openCUProfile(cuId, filter);
+                }
+            });
+        });
+
+        // Generate and open profile for a compilation unit
+        async function openCUProfile(cuId, searchFilter = null) {
+            const profile = generateCUProfile(cuId);
+
+            const origin = "http://localhost:4242";
+            let profilerURL = origin + "/from-post-message/";
+
+            // Add search filter if provided
+            if (searchFilter) {
+                const encodedSearch = encodeURIComponent(' ' + searchFilter);
+                profilerURL += `flame-graph/?globalTrackOrder=0&search=${encodedSearch}&thread=0&timelineType=category&v=12`;
+            }
+
+            const profilerWindow = window.open(profilerURL, "_blank");
+
+            if (!profilerWindow) {
+                console.error("Failed to open the new window.");
+                return;
+            }
+
+            let isReady = false;
+            window.addEventListener("message", function listener(event) {
+                if (event.data && event.data.name === "ready:response") {
+                    window.removeEventListener("message", listener);
+                    isReady = true;
+                    const message = {
+                        name: "inject-profile",
+                        profile: profile,
+                    };
+                    profilerWindow.postMessage(message, origin);
+                }
+            });
+
+            while (true) {
+                await new Promise((resolve) => setTimeout(resolve, 100));
+                if (isReady) {
+                    break;
+                }
+                profilerWindow.postMessage({ name: "ready:request" }, origin);
+            }
+        }
+
+        function generateCUProfile(cuId) {
+            // Generate Firefox Profiler format for this compilation unit
+            // Similar to what clang-trace-to-profiler.js does
+
+            const cuName = dashboardData.compilationUnits.names[cuId];
+            const fileIds = dashboardData.includes.fileIds[cuId];
+            const startTimes = dashboardData.includes.startTimes[cuId];
+            const durations = dashboardData.includes.durations[cuId];
+            const parentFileIds = dashboardData.includes.parentFileIds[cuId];
+
+            // Decompress timestamps
+            const actualStartTimes = [];
+            let currentTime = 0;
+            for (const diff of startTimes) {
+                currentTime += diff;
+                actualStartTimes.push(currentTime);
+            }
+
+            // Build string table and func table
+            const stringTable = [cuName];
+            const stringToIndex = { [cuName]: 0 };
+
+            function addString(str) {
+                if (!(str in stringToIndex)) {
+                    stringToIndex[str] = stringTable.length;
+                    stringTable.push(str);
+                }
+                return stringToIndex[str];
+            }
+
+            // Build func table and frame table
+            const funcTable = {
+                name: [0], // root
+                isJS: [false],
+                relevantForJS: [false],
+                resource: [-1],
+                fileName: [null],
+                lineNumber: [null],
+                columnNumber: [null]
+            };
+
+            const frameTable = {
+                func: [0], // root frame
+                address: [-1],
+                inlineDepth: [0],
+                category: [1],  // Compilation category
+                subcategory: [1],  // Header Processing subcategory
+                innerWindowID: [0],
+                implementation: [null],
+                line: [null],
+                column: [null]
+            };
+
+            const fileIdToFuncId = new Map();
+            fileIdToFuncId.set(-1, 0); // root
+
+            function getFuncId(fileId) {
+                if (fileIdToFuncId.has(fileId)) {
+                    return fileIdToFuncId.get(fileId);
+                }
+
+                const fileName = dashboardData.tables.files[fileId];
+                const nameIndex = addString(fileName);
+                const funcId = funcTable.name.length;
+
+                funcTable.name.push(nameIndex);
+                funcTable.isJS.push(false);
+                funcTable.relevantForJS.push(false);
+                funcTable.resource.push(-1);
+                funcTable.fileName.push(nameIndex);
+                funcTable.lineNumber.push(null);
+                funcTable.columnNumber.push(null);
+
+                // Add frame (category 1 = Compilation, subcategory 1 = Header Processing)
+                frameTable.func.push(funcId);
+                frameTable.address.push(-1);
+                frameTable.inlineDepth.push(0);
+                frameTable.category.push(1);
+                frameTable.subcategory.push(1);
+                frameTable.innerWindowID.push(0);
+                frameTable.implementation.push(null);
+                frameTable.line.push(null);
+                frameTable.column.push(null);
+
+                fileIdToFuncId.set(fileId, funcId);
+                return funcId;
+            }
+
+            // Pre-create all funcs/frames
+            for (const fileId of fileIds) {
+                getFuncId(fileId);
+            }
+
+            // Build stacks
+            const stackTable = {
+                frame: [0], // root
+                category: [1],  // Compilation category
+                subcategory: [1],  // Header Processing subcategory
+                prefix: [null]
+            };
+
+            const stackCache = new Map();
+            stackCache.set('0', 0); // root stack
+
+            function getOrCreateStack(frameId, prefixStackId) {
+                const key = `${prefixStackId},${frameId}`;
+                if (stackCache.has(key)) {
+                    return stackCache.get(key);
+                }
+
+                const stackId = stackTable.frame.length;
+                stackTable.frame.push(frameId);
+                stackTable.category.push(1);  // Compilation category
+                stackTable.subcategory.push(1);  // Header Processing subcategory
+                stackTable.prefix.push(prefixStackId);
+                stackCache.set(key, stackId);
+                return stackId;
+            }
+
+            // Build samples with weights
+            const samples = {
+                stack: [],
+                time: [],
+                weight: [],
+                weightType: 'tracing-ms',  // Use tracing-ms for duration-based weights
+                eventDelay: []
+            };
+
+            // Build samples for each include
+            for (let i = 0; i < fileIds.length; i++) {
+                const fileId = fileIds[i];
+                const parentFileId = parentFileIds[i];
+                const duration = durations[i];  // Already in ms
+                const startTime = actualStartTimes[i];
+
+                // Build stack by walking up parent chain
+                const stack = [];
+                let currentFileId = fileId;
+                let searchIndex = i;
+
+                // Walk up the parent chain to build the full include stack
+                while (true) {
+                    stack.unshift(currentFileId);
+
+                    const parentId = parentFileIds[searchIndex];
+                    if (parentId === -1) break;  // Reached root
+
+                    // Find the parent include
+                    let found = false;
+                    for (let k = 0; k < searchIndex; k++) {
+                        if (fileIds[k] === parentId) {
+                            currentFileId = parentId;
+                            searchIndex = k;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) break;
+                }
+
+                // Create profiler stack with CU name as root
+                let stackId = 0; // start with root (CU name)
+                for (const fid of stack) {
+                    const funcId = getFuncId(fid);
+                    const frameId = funcId; // frame ID == func ID
+                    stackId = getOrCreateStack(frameId, stackId);
+                }
+
+                // Add sample with duration as weight
+                samples.stack.push(stackId);
+                samples.time.push(startTime);
+                samples.weight.push(duration);
+                samples.eventDelay.push(0);
+            }
+
+            // Build profile
+            const profile = {
+                meta: {
+                    interval: 1,
+                    startTime: 0,
+                    abi: "",
+                    misc: "",
+                    oscpu: "",
+                    platform: "",
+                    processType: 0,
+                    extensions: { id: [], name: [], baseURL: [], length: 0 },
+                    categories: [
+                        { name: "Other", color: "grey", subcategories: ["Other"] },
+                        { name: "Compilation", color: "blue", subcategories: ["Other", "Header Processing"] }
+                    ],
+                    product: `Clang compilation time analysis: ${cuName}`,
+                    stackwalk: 0,
+                    toolkit: "",
+                    version: 28,
+                    preprocessedProfileVersion: 57,
+                    appBuildID: "",
+                    sourceURL: "",
+                    physicalCPUs: 0,
+                    logicalCPUs: 0,
+                    CPUName: "",
+                    symbolicationNotSupported: true,
+                    markerSchema: []
+                },
+                libs: [],
+                pages: [],
+                counters: [],
+                profilerOverhead: [],
+                shared: {
+                    stringArray: stringTable
+                },
+                threads: [{
+                    processType: "default",
+                    processStartupTime: 0,
+                    processShutdownTime: null,
+                    registerTime: 0,
+                    unregisterTime: null,
+                    pausedRanges: [],
+                    name: cuName,
+                    isMainThread: true,
+                    pid: "0",
+                    tid: 0,
+                    samples: samples,
+                    markers: {
+                        data: [],
+                        name: [],
+                        startTime: [],
+                        endTime: [],
+                        phase: [],
+                        category: [],
+                        length: 0
+                    },
+                    stackTable: stackTable,
+                    frameTable: frameTable,
+                    funcTable: funcTable,
+                    resourceTable: {
+                        lib: [],
+                        name: [],
+                        host: [],
+                        type: [],
+                        length: 0
+                    },
+                    nativeSymbols: {
+                        libIndex: [],
+                        address: [],
+                        name: [],
+                        functionSize: [],
+                        length: 0
+                    }
+                }]
+            };
+
+            // Add lengths
+            profile.threads[0].samples.length = samples.stack.length;
+            profile.threads[0].stackTable.length = stackTable.frame.length;
+            profile.threads[0].frameTable.length = frameTable.func.length;
+            profile.threads[0].funcTable.length = funcTable.name.length;
+
+            return profile;
+        }
+
+        // Load data on page load
+        loadData();
+    </script>
+</body>
+</html>
