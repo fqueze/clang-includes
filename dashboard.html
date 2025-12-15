@@ -295,7 +295,12 @@
         // Load the dashboard JSON
         async function loadData() {
             try {
-                const response = await fetch('build-dashboard.json');
+                const isFileProtocol = window.location.protocol === 'file:';
+                const dataUrl = isFileProtocol
+                    ? 'build-dashboard.json'
+                    : 'https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/gecko.v2.try.latest.firefox.linux64-clang-includes-opt/artifacts/public/build/includes.json';
+
+                const response = await fetch(dataUrl);
                 dashboardData = await response.json();
                 processData();
                 renderStats();
@@ -1147,7 +1152,8 @@
         async function openCUProfile(cuId, searchFilter = null) {
             const profile = generateCUProfile(cuId);
 
-            const origin = "http://localhost:4242";
+            const isFileProtocol = window.location.protocol === 'file:';
+            const origin = isFileProtocol ? "http://localhost:4242" : "https://profiler.firefox.com";
             let profilerURL = origin + "/from-post-message/";
 
             // Add search filter if provided
