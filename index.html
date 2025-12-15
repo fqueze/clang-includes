@@ -393,7 +393,8 @@
                    fileName.includes('/usr/include/') ||
                    fileName.includes('/usr/lib/') ||
                    fileName.startsWith('/usr/') ||
-                   fileName.includes('sysroot-');
+                   fileName.includes('sysroot-') ||
+                   fileName.includes('/fetches/clang/');
         }
 
         function getDirectIncluders(fileId) {
