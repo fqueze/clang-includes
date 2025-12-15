@@ -141,6 +141,11 @@
             font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
             color: #0066cc;
             font-size: 12px;
+            padding-left: 16px;
+        }
+
+        tr.expandable {
+            cursor: pointer;
         }
 
         .number {
@@ -175,6 +180,43 @@
             font-size: 14px;
             width: 300px;
             margin-bottom: 15px;
+        }
+
+        .filter-controls {
+            margin: 15px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .filter-controls .search-box {
+            margin: 0;
+        }
+
+        .filter-controls label {
+            cursor: pointer;
+        }
+
+        .filename::before {
+            content: '  ';
+            display: inline-block;
+            width: 12px;
+            margin-right: 4px;
+        }
+
+        tr.expandable .filename::before {
+            content: '▶';
+        }
+
+        tr.expandable.expanded .filename::before {
+            content: '▼';
+        }
+
+        .truncation-message {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            background: #f8f9fa;
         }
 
         .bar-cell {
@@ -235,19 +277,19 @@
 
     <div class="content">
         <div id="headers" class="table-container active">
-            <div style="margin: 15px; display: flex; gap: 15px; align-items: center;">
-                <input type="text" id="headerSearch" class="search-box" placeholder="Search headers..." style="margin: 0;">
+            <div class="filter-controls">
+                <input type="text" id="headerSearch" class="search-box" placeholder="Search headers...">
                 <div>
                     <span>SDK files: </span>
-                    <label style="cursor: pointer;">
+                    <label>
                         <input type="radio" name="sdkFilter" value="none" checked onchange="renderHeadersTable()">
                         None
                     </label>
-                    <label style="cursor: pointer;">
+                    <label>
                         <input type="radio" name="sdkFilter" value="direct" onchange="renderHeadersTable()">
                         Direct includes
                     </label>
-                    <label style="cursor: pointer;">
+                    <label>
                         <input type="radio" name="sdkFilter" value="all" onchange="renderHeadersTable()">
                         All
                     </label>
@@ -275,7 +317,9 @@
         </div>
 
         <div id="compilationUnits" class="table-container">
-            <input type="text" id="cuSearch" class="search-box" placeholder="Search compilation units..." style="margin: 15px;">
+            <div class="filter-controls">
+                <input type="text" id="cuSearch" class="search-box" placeholder="Search compilation units...">
+            </div>
             <table>
                 <colgroup>
                     <col style="width: 40%;">
@@ -654,6 +698,7 @@
             if (isCurrentlyExpanded) {
                 // Collapse: remove all descendant rows (not just direct children)
                 expandedHeaders.delete(fileId);
+                rowElement.classList.remove('expanded');
 
                 const currentDepth = parseInt(rowElement.dataset.depth);
 
@@ -670,17 +715,10 @@
                     nextRow = nextRow.nextElementSibling;
                     toRemove.remove();
                 }
-
-                // Update icon
-                const iconSpan = rowElement.querySelector('.expand-icon');
-                if (iconSpan) iconSpan.textContent = '▶';
             } else {
                 // Expand: add child rows
                 expandedHeaders.add(fileId);
-
-                // Update icon
-                const iconSpan = rowElement.querySelector('.expand-icon');
-                if (iconSpan) iconSpan.textContent = '▼';
+                rowElement.classList.add('expanded');
 
                 // Get children
                 const includers = getDirectIncluders(fileId);
@@ -723,8 +761,7 @@
         function createHeaderRow(header, depth, maxRebuildPercent, parentId = null) {
             const hasChildren = filesWithIncluders.has(header.fileId);
             const indent = depth * 20;
-            const expandIcon = hasChildren ? '▶' : '  ';
-            const expandTooltip = hasChildren ? 'Click to show which files include this header' : '';
+            const expandTooltip = hasChildren ? 'Click to show which files include this header' : header.fileName;
 
             const tr = document.createElement('tr');
             if (parentId !== null) {
@@ -734,26 +771,49 @@
             tr.dataset.depth = depth;
             tr.dataset.fileId = header.fileId;
             if (hasChildren) {
-                tr.style.cursor = 'pointer';
+                tr.classList.add('expandable');
                 tr.onclick = (e) => toggleHeaderExpanded(e, header.fileId, tr);
             }
 
-            tr.innerHTML = `
-                <td class="filename" style="padding-left: ${indent + 16}px">
-                    <span class="expand-icon" style="display: inline-block; width: 12px; margin-right: 4px;" title="${expandTooltip}">${expandIcon}</span>
-                    ${escapeHtml(header.fileName)}
-                </td>
-                <td class="bar-cell">
-                    <div class="bar-container">
-                        <div class="bar-bg" style="width: ${(header.rebuildPercent / maxRebuildPercent) * 100}%"></div>
-                        <span class="bar-text number percentage">${header.rebuildPercent.toFixed(2)}%</span>
-                    </div>
-                </td>
-                <td class="number">${header.includeCount.toLocaleString()}</td>
-                <td class="number">${header.maxTreeSize > 0 ?
-                    `<a href="#" class="profile-link" data-cu-id="${header.maxTreeSizeCU}" data-filter="${escapeHtml(header.fileName)}">${header.maxTreeSize.toLocaleString()}</a>` :
-                    '-'}</td>
-            `;
+            const filenameCell = tr.insertCell();
+            filenameCell.className = 'filename';
+            filenameCell.title = expandTooltip;
+            if (indent > 0) {
+                filenameCell.style.paddingLeft = `${indent + 16}px`;
+            }
+            filenameCell.textContent = header.fileName;
+
+            const barCell = tr.insertCell();
+            barCell.className = 'bar-cell';
+            const barContainer = document.createElement('div');
+            barContainer.className = 'bar-container';
+            const barBg = document.createElement('div');
+            barBg.className = 'bar-bg';
+            barBg.style.width = `${((header.rebuildPercent / maxRebuildPercent) * 100).toFixed(2)}%`;
+            const barText = document.createElement('span');
+            barText.className = 'bar-text number percentage';
+            barText.textContent = `${header.rebuildPercent.toFixed(2)}%`;
+            barContainer.appendChild(barBg);
+            barContainer.appendChild(barText);
+            barCell.appendChild(barContainer);
+
+            const countCell = tr.insertCell();
+            countCell.className = 'number';
+            countCell.textContent = header.includeCount.toLocaleString();
+
+            const treeSizeCell = tr.insertCell();
+            treeSizeCell.className = 'number';
+            if (header.maxTreeSize > 0) {
+                const link = document.createElement('a');
+                link.href = '#';
+                link.className = 'profile-link';
+                link.dataset.cuId = header.maxTreeSizeCU;
+                link.dataset.filter = header.fileName;
+                link.textContent = header.maxTreeSize.toLocaleString();
+                treeSizeCell.appendChild(link);
+            } else {
+                treeSizeCell.textContent = '-';
+            }
 
             return tr;
         }
@@ -795,7 +855,10 @@
             // Show message if results are truncated
             if (filtered.length > limit) {
                 const messageRow = document.createElement('tr');
-                messageRow.innerHTML = `<td colspan="4" style="text-align: center; padding: 20px; color: #666; background: #f8f9fa;">Showing ${limit.toLocaleString()} of ${filtered.length.toLocaleString()} headers. Use search to narrow results.</td>`;
+                const messageCell = messageRow.insertCell();
+                messageCell.colSpan = 4;
+                messageCell.className = 'truncation-message';
+                messageCell.textContent = `Showing ${limit.toLocaleString()} of ${filtered.length.toLocaleString()} headers. Use search to narrow results.`;
                 tbody.appendChild(messageRow);
             }
 
@@ -885,6 +948,7 @@
             if (isCurrentlyExpanded) {
                 // Collapse: remove all child rows
                 expandedCUIncludes.delete(expandKey);
+                rowElement.classList.remove('expanded');
 
                 const currentDepth = parseInt(rowElement.dataset.depth);
 
@@ -901,17 +965,10 @@
                     nextRow = nextRow.nextElementSibling;
                     toRemove.remove();
                 }
-
-                // Update icon
-                const iconSpan = rowElement.querySelector('.expand-icon');
-                if (iconSpan) iconSpan.textContent = '▶';
             } else {
                 // Expand: add child rows
                 expandedCUIncludes.add(expandKey);
-
-                // Update icon
-                const iconSpan = rowElement.querySelector('.expand-icon');
-                if (iconSpan) iconSpan.textContent = '▼';
+                rowElement.classList.add('expanded');
 
                 // Get direct children
                 const children = getDirectChildren(cuId, fileId);
@@ -946,8 +1003,7 @@
         function createCURow(cu, depth, maxPercentInIncludes) {
             const indent = depth * 20;
             const hasChildren = cu.hasChildren !== false && (depth === 0 || cu.includeTreeSize > 0);
-            const expandIcon = hasChildren ? '▶' : '  ';
-            const expandTooltip = hasChildren ? 'Click to show include hierarchy' : '';
+            const expandTooltip = hasChildren ? 'Click to show include hierarchy' : cu.name;
 
             const tr = document.createElement('tr');
             tr.dataset.depth = depth;
@@ -956,7 +1012,7 @@
 
             // Make clickable if it has children
             if (hasChildren) {
-                tr.style.cursor = 'pointer';
+                tr.classList.add('expandable');
                 const fileId = depth === 0 ? -1 : cu.fileId;
                 tr.onclick = (e) => toggleCUExpanded(e, cu.cuId, fileId, tr);
             }
@@ -971,19 +1027,21 @@
                 timeInIncludesCell = `<a href="#" class="profile-link" data-cu-id="${cu.cuId}" data-filter="${escapeHtml(cu.name)}">${formatTime(cu.timeInIncludes)}</a>`;
             }
 
+            const paddingStyle = indent > 0 ? ` style="padding-left: ${indent + 16}px"` : '';
+            const titleAttr = ` title="${escapeHtml(expandTooltip)}"`;
+
             if (depth === 0) {
                 // Top-level row: all columns
                 const includeTreeSizeCell = cu.includeTreeSize > 0 ? cu.includeTreeSize.toLocaleString() : '-';
 
                 tr.innerHTML = `
-                    <td class="filename" style="padding-left: ${indent + 16}px">
-                        <span class="expand-icon" style="display: inline-block; width: 12px; margin-right: 4px;" title="${expandTooltip}">${expandIcon}</span>
+                    <td class="filename"${paddingStyle}${titleAttr}>
                         ${escapeHtml(cu.name)}
                     </td>
                     <td class="number">${formatTime(cu.buildTime)}</td>
                     <td class="bar-cell">
                         <div class="bar-container">
-                            <div class="bar-bg" style="width: ${(cu.percentInIncludes / maxPercentInIncludes) * 100}%"></div>
+                            <div class="bar-bg" style="width: ${((cu.percentInIncludes / maxPercentInIncludes) * 100).toFixed(2)}%"></div>
                             <span class="bar-text number percentage">${cu.percentInIncludes.toFixed(1)}%</span>
                         </div>
                     </td>
@@ -995,8 +1053,7 @@
                 const includeTreeSizeCell = cu.includeTreeSize > 0 ? cu.includeTreeSize.toLocaleString() : '-';
 
                 tr.innerHTML = `
-                    <td class="filename" colspan="3" style="padding-left: ${indent + 16}px">
-                        <span class="expand-icon" style="display: inline-block; width: 12px; margin-right: 4px;" title="${expandTooltip}">${expandIcon}</span>
+                    <td class="filename" colspan="3"${paddingStyle}${titleAttr}>
                         ${escapeHtml(cu.name)}
                     </td>
                     <td class="number">${includeTreeSizeCell}</td>
@@ -1033,7 +1090,10 @@
             // Show message if results are truncated
             if (filtered.length > limit) {
                 const messageRow = document.createElement('tr');
-                messageRow.innerHTML = `<td colspan="5" style="text-align: center; padding: 20px; color: #666; background: #f8f9fa;">Showing ${limit.toLocaleString()} of ${filtered.length.toLocaleString()} compilation units. Use search to narrow results.</td>`;
+                const messageCell = messageRow.insertCell();
+                messageCell.colSpan = 5;
+                messageCell.className = 'truncation-message';
+                messageCell.textContent = `Showing ${limit.toLocaleString()} of ${filtered.length.toLocaleString()} compilation units. Use search to narrow results.`;
                 tbody.appendChild(messageRow);
             }
 
