@@ -774,9 +774,17 @@
 
             // Clear and rebuild
             tbody.innerHTML = '';
-            for (const header of filtered.slice(0, 1000)) {
+            const limit = 1000;
+            for (const header of filtered.slice(0, limit)) {
                 const row = createHeaderRow(header, 0, maxRebuildPercent);
                 tbody.appendChild(row);
+            }
+
+            // Show message if results are truncated
+            if (filtered.length > limit) {
+                const messageRow = document.createElement('tr');
+                messageRow.innerHTML = `<td colspan="4" style="text-align: center; padding: 20px; color: #666; background: #f8f9fa;">Showing ${limit.toLocaleString()} of ${filtered.length.toLocaleString()} headers. Use search to narrow results.</td>`;
+                tbody.appendChild(messageRow);
             }
 
             // Update sort arrow indicators for headers table
@@ -1003,9 +1011,17 @@
 
             // Clear and rebuild
             tbody.innerHTML = '';
-            for (const cu of filtered.slice(0, 1000)) {
+            const limit = 1000;
+            for (const cu of filtered.slice(0, limit)) {
                 const row = createCURow(cu, 0, maxPercentInIncludes);
                 tbody.appendChild(row);
+            }
+
+            // Show message if results are truncated
+            if (filtered.length > limit) {
+                const messageRow = document.createElement('tr');
+                messageRow.innerHTML = `<td colspan="5" style="text-align: center; padding: 20px; color: #666; background: #f8f9fa;">Showing ${limit.toLocaleString()} of ${filtered.length.toLocaleString()} compilation units. Use search to narrow results.</td>`;
+                tbody.appendChild(messageRow);
             }
 
             // Update sort arrow indicators for CU table
