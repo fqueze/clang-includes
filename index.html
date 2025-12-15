@@ -230,10 +230,21 @@
         <div id="headers" class="table-container active">
             <div style="margin: 15px; display: flex; gap: 15px; align-items: center;">
                 <input type="text" id="headerSearch" class="search-box" placeholder="Search headers..." style="margin: 0;">
-                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
-                    <input type="checkbox" id="filterSDK" checked onchange="renderHeadersTable()">
-                    <span>Only show SDK files directly included by our code</span>
-                </label>
+                <div>
+                    <span>SDK files: </span>
+                    <label style="cursor: pointer;">
+                        <input type="radio" name="sdkFilter" value="none" checked onchange="renderHeadersTable()">
+                        None
+                    </label>
+                    <label style="cursor: pointer;">
+                        <input type="radio" name="sdkFilter" value="direct" onchange="renderHeadersTable()">
+                        Direct includes
+                    </label>
+                    <label style="cursor: pointer;">
+                        <input type="radio" name="sdkFilter" value="all" onchange="renderHeadersTable()">
+                        All
+                    </label>
+                </div>
             </div>
             <table>
                 <colgroup>
@@ -331,10 +342,10 @@
                 params.set('cuSearch', cuSearch);
             }
 
-            const filterSDK = document.getElementById('filterSDK')?.checked ?? true;
-            // Only add to URL if unchecked (since checked is the default)
-            if (!filterSDK) {
-                params.set('filterSDK', '0');
+            const sdkFilterValue = document.querySelector('input[name="sdkFilter"]:checked')?.value || 'none';
+            // Only add to URL if not the default 'none'
+            if (sdkFilterValue !== 'none') {
+                params.set('sdkFilter', sdkFilterValue);
             }
 
             const hash = params.toString();
@@ -370,10 +381,10 @@
                 document.getElementById('cuSearch').value = cuSearch;
             }
 
-            const filterSDK = params.get('filterSDK');
-            if (document.getElementById('filterSDK')) {
-                // Default to checked, only uncheck if explicitly set to '0'
-                document.getElementById('filterSDK').checked = filterSDK !== '0';
+            const sdkFilter = params.get('sdkFilter');
+            if (sdkFilter && (sdkFilter === 'none' || sdkFilter === 'direct' || sdkFilter === 'all')) {
+                const radio = document.querySelector(`input[name="sdkFilter"][value="${sdkFilter}"]`);
+                if (radio) radio.checked = true;
             }
         }
 
@@ -737,7 +748,7 @@
 
         function renderHeadersTable() {
             const searchTerm = document.getElementById('headerSearch')?.value.toLowerCase() || '';
-            const sdkFilter = document.getElementById('filterSDK')?.checked || false;
+            const sdkFilterValue = document.querySelector('input[name="sdkFilter"]:checked')?.value || 'none';
 
             // Clear expanded state when re-rendering
             expandedHeaders.clear();
@@ -750,9 +761,12 @@
             }
 
             // Apply SDK filter
-            if (sdkFilter) {
+            if (sdkFilterValue === 'none') {
+                filtered = filtered.filter(h => !h.isSDK);
+            } else if (sdkFilterValue === 'direct') {
                 filtered = filtered.filter(h => !h.isSDK || h.directlyIncludedByOurCode);
             }
+            // 'all' shows everything, no filter needed
 
             const tbody = document.getElementById('headersBody');
             const maxRebuildPercent = filtered.length > 0 ?
