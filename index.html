@@ -25,6 +25,13 @@
             color: #333;
         }
 
+        #generatedDate {
+            font-size: 14px;
+            color: #666;
+            font-weight: normal;
+            margin-left: 10px;
+        }
+
         .stats {
             display: flex;
             gap: 30px;
@@ -200,21 +207,21 @@
 </head>
 <body>
     <div class="header">
-        <h1>Clang Compilation Time Dashboard</h1>
+        <h1>Clang Compilation Time Dashboard <span id="generatedDate"></span></h1>
         <div class="stats">
-            <div class="stat-item">
+            <div class="stat-item" title="Number of object files compiled in this build">
                 <span class="stat-value" id="totalCUs">-</span>
                 <span>Compilation Units</span>
             </div>
-            <div class="stat-item">
+            <div class="stat-item" title="Total number of #include directives processed across all compilation units (counting duplicates)">
                 <span class="stat-value" id="totalIncludes">-</span>
                 <span>Total Includes</span>
             </div>
-            <div class="stat-item">
+            <div class="stat-item" title="Number of distinct header files referenced across all compilation units">
                 <span class="stat-value" id="uniqueHeaders">-</span>
                 <span>Unique Headers</span>
             </div>
-            <div class="stat-item">
+            <div class="stat-item" title="Sum of compilation time for all compilation units if compiled sequentially (not wall clock time, as compilation normally happens in parallel)">
                 <span class="stat-value" id="totalBuildTime">-</span>
                 <span>Total Build Time</span>
             </div>
@@ -255,10 +262,10 @@
                 </colgroup>
                 <thead>
                     <tr>
-                        <th onclick="sortTable('headers', 0)">Header File <span class="sort-arrow">▼</span></th>
-                        <th onclick="sortTable('headers', 1)">Rebuild Impact % <span class="sort-arrow">▼</span></th>
-                        <th onclick="sortTable('headers', 2)">Include Count <span class="sort-arrow">▼</span></th>
-                        <th onclick="sortTable('headers', 3)">Max Include Tree Size <span class="sort-arrow">▼</span></th>
+                        <th onclick="sortTable('headers', 0)" title="Header file path. Click to expand and see which files include it.">Header File <span class="sort-arrow">▼</span></th>
+                        <th onclick="sortTable('headers', 1)" title="Percentage of total build time that would be affected if this header changed (sum of build times for all CUs that include it)">Rebuild Impact % <span class="sort-arrow">▼</span></th>
+                        <th onclick="sortTable('headers', 2)" title="Total number of times this header is included across all compilation units">Include Count <span class="sort-arrow">▼</span></th>
+                        <th onclick="sortTable('headers', 3)" title="Maximum number of headers transitively included by this header across all compilation units. The number varies because #ifdef guards and include guards may skip headers in different contexts. Click the number to view a profile of the worst case.">Max Include Tree Size <span class="sort-arrow">▼</span></th>
                     </tr>
                 </thead>
                 <tbody id="headersBody">
@@ -279,11 +286,11 @@
                 </colgroup>
                 <thead>
                     <tr>
-                        <th onclick="sortTable('cu', 0)">Compilation Unit <span class="sort-arrow">▼</span></th>
-                        <th onclick="sortTable('cu', 1)">Build Time <span class="sort-arrow">▼</span></th>
-                        <th onclick="sortTable('cu', 2)">% in Includes <span class="sort-arrow">▼</span></th>
-                        <th onclick="sortTable('cu', 3)">Include Tree Size <span class="sort-arrow">▼</span></th>
-                        <th onclick="sortTable('cu', 4)">Time in Includes <span class="sort-arrow">▼</span></th>
+                        <th onclick="sortTable('cu', 0)" title="Source file being compiled. Click to expand and see include hierarchy.">Compilation Unit <span class="sort-arrow">▼</span></th>
+                        <th onclick="sortTable('cu', 1)" title="Total time to compile this file">Build Time <span class="sort-arrow">▼</span></th>
+                        <th onclick="sortTable('cu', 2)" title="Percentage of build time spent processing #include directives">% in Includes <span class="sort-arrow">▼</span></th>
+                        <th onclick="sortTable('cu', 3)" title="Total number of headers included (directly and transitively)">Include Tree Size <span class="sort-arrow">▼</span></th>
+                        <th onclick="sortTable('cu', 4)" title="Absolute time spent processing #include directives. Click to view profile.">Time in Includes <span class="sort-arrow">▼</span></th>
                     </tr>
                 </thead>
                 <tbody id="cuBody">
@@ -610,6 +617,9 @@
             const totalBuildTime = dashboardData.compilationUnits.buildTimes.reduce((a, b) => a + b, 0);
             document.getElementById('totalBuildTime').textContent =
                 formatTime(totalBuildTime);
+
+            const date = new Date(dashboardData.metadata.generatedAt);
+            document.getElementById('generatedDate').textContent = `(Generated ${date.toLocaleString()})`;
         }
 
         function formatTime(ms) {
@@ -714,6 +724,7 @@
             const hasChildren = filesWithIncluders.has(header.fileId);
             const indent = depth * 20;
             const expandIcon = hasChildren ? '▶' : '  ';
+            const expandTooltip = hasChildren ? 'Click to show which files include this header' : '';
 
             const tr = document.createElement('tr');
             if (parentId !== null) {
@@ -729,7 +740,7 @@
 
             tr.innerHTML = `
                 <td class="filename" style="padding-left: ${indent + 16}px">
-                    <span class="expand-icon" style="display: inline-block; width: 12px; margin-right: 4px;">${expandIcon}</span>
+                    <span class="expand-icon" style="display: inline-block; width: 12px; margin-right: 4px;" title="${expandTooltip}">${expandIcon}</span>
                     ${escapeHtml(header.fileName)}
                 </td>
                 <td class="bar-cell">
@@ -936,6 +947,7 @@
             const indent = depth * 20;
             const hasChildren = cu.hasChildren !== false && (depth === 0 || cu.includeTreeSize > 0);
             const expandIcon = hasChildren ? '▶' : '  ';
+            const expandTooltip = hasChildren ? 'Click to show include hierarchy' : '';
 
             const tr = document.createElement('tr');
             tr.dataset.depth = depth;
@@ -965,7 +977,7 @@
 
                 tr.innerHTML = `
                     <td class="filename" style="padding-left: ${indent + 16}px">
-                        <span class="expand-icon" style="display: inline-block; width: 12px; margin-right: 4px;">${expandIcon}</span>
+                        <span class="expand-icon" style="display: inline-block; width: 12px; margin-right: 4px;" title="${expandTooltip}">${expandIcon}</span>
                         ${escapeHtml(cu.name)}
                     </td>
                     <td class="number">${formatTime(cu.buildTime)}</td>
@@ -984,7 +996,7 @@
 
                 tr.innerHTML = `
                     <td class="filename" colspan="3" style="padding-left: ${indent + 16}px">
-                        <span class="expand-icon" style="display: inline-block; width: 12px; margin-right: 4px;">${expandIcon}</span>
+                        <span class="expand-icon" style="display: inline-block; width: 12px; margin-right: 4px;" title="${expandTooltip}">${expandIcon}</span>
                         ${escapeHtml(cu.name)}
                     </td>
                     <td class="number">${includeTreeSizeCell}</td>
