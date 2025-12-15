@@ -765,6 +765,9 @@
                 tbody.appendChild(row);
             }
 
+            // Update sort arrow indicators for headers table
+            updateSortArrows('headers');
+
             updateURLHash();
         }
 
@@ -906,7 +909,7 @@
             }
         }
 
-        function createCURow(cu, depth, maxTimeInIncludes) {
+        function createCURow(cu, depth, maxPercentInIncludes) {
             const indent = depth * 20;
             const hasChildren = cu.hasChildren !== false && (depth === 0 || cu.includeTreeSize > 0);
             const expandIcon = hasChildren ? '▶' : '  ';
@@ -945,7 +948,7 @@
                     <td class="number">${formatTime(cu.buildTime)}</td>
                     <td class="bar-cell">
                         <div class="bar-container">
-                            <div class="bar-bg" style="width: ${(cu.timeInIncludes / maxTimeInIncludes) * 100}%"></div>
+                            <div class="bar-bg" style="width: ${(cu.percentInIncludes / maxPercentInIncludes) * 100}%"></div>
                             <span class="bar-text number percentage">${cu.percentInIncludes.toFixed(1)}%</span>
                         </div>
                     </td>
@@ -981,15 +984,18 @@
             expandedCUIncludes.clear();
 
             const tbody = document.getElementById('cuBody');
-            const maxTimeInIncludes = filtered.length > 0 ?
-                Math.max(...filtered.map(cu => cu.timeInIncludes)) : 1;
+            const maxPercentInIncludes = filtered.length > 0 ?
+                Math.max(...filtered.map(cu => cu.percentInIncludes)) : 1;
 
             // Clear and rebuild
             tbody.innerHTML = '';
             for (const cu of filtered.slice(0, 1000)) {
-                const row = createCURow(cu, 0, maxTimeInIncludes);
+                const row = createCURow(cu, 0, maxPercentInIncludes);
                 tbody.appendChild(row);
             }
+
+            // Update sort arrow indicators for CU table
+            updateSortArrows('cu');
 
             updateURLHash();
         }
@@ -1087,10 +1093,16 @@
                 renderCUTable();
             }
 
+            updateSortArrows(table);
+        }
+
+        function updateSortArrows(table) {
             // Update sort arrow indicators
             const tableElem = table === 'headers' ?
                 document.querySelector('#headers table') :
                 document.querySelector('#compilationUnits table');
+            if (!tableElem) return;
+
             const headers = tableElem.querySelectorAll('th');
             headers.forEach((th, idx) => {
                 th.classList.remove('sorted');
