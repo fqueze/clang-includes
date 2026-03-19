@@ -1339,12 +1339,17 @@
             }
 
             // Build func table and frame table
+            const sourcesTable = {
+                uuid: [null],
+                filename: [0]
+            };
+
             const funcTable = {
                 name: [0], // root
                 isJS: [false],
                 relevantForJS: [false],
                 resource: [-1],
-                fileName: [null],
+                source: [0],
                 lineNumber: [null],
                 columnNumber: [null]
             };
@@ -1356,7 +1361,7 @@
                 category: [1],  // Compilation category
                 subcategory: [1],  // Header Processing subcategory
                 innerWindowID: [0],
-                implementation: [null],
+                nativeSymbol: [null],
                 line: [null],
                 column: [null]
             };
@@ -1377,7 +1382,10 @@
                 funcTable.isJS.push(false);
                 funcTable.relevantForJS.push(false);
                 funcTable.resource.push(-1);
-                funcTable.fileName.push(nameIndex);
+                const sourceIndex = sourcesTable.uuid.length;
+                sourcesTable.uuid.push(null);
+                sourcesTable.filename.push(nameIndex);
+                funcTable.source.push(sourceIndex);
                 funcTable.lineNumber.push(null);
                 funcTable.columnNumber.push(null);
 
@@ -1388,7 +1396,7 @@
                 frameTable.category.push(1);
                 frameTable.subcategory.push(1);
                 frameTable.innerWindowID.push(0);
-                frameTable.implementation.push(null);
+                frameTable.nativeSymbol.push(null);
                 frameTable.line.push(null);
                 frameTable.column.push(null);
 
@@ -1502,7 +1510,7 @@
                     stackwalk: 0,
                     toolkit: "",
                     version: 28,
-                    preprocessedProfileVersion: 57,
+                    preprocessedProfileVersion: 60,
                     appBuildID: "",
                     sourceURL: "",
                     physicalCPUs: 0,
@@ -1516,7 +1524,25 @@
                 counters: [],
                 profilerOverhead: [],
                 shared: {
-                    stringArray: stringTable
+                    stringArray: stringTable,
+                    stackTable: stackTable,
+                    frameTable: frameTable,
+                    funcTable: funcTable,
+                    resourceTable: {
+                        lib: [],
+                        name: [],
+                        host: [],
+                        type: [],
+                        length: 0
+                    },
+                    nativeSymbols: {
+                        libIndex: [],
+                        address: [],
+                        name: [],
+                        functionSize: [],
+                        length: 0
+                    },
+                    sources: sourcesTable
                 },
                 threads: [{
                     processType: "default",
@@ -1539,31 +1565,15 @@
                         category: [],
                         length: 0
                     },
-                    stackTable: stackTable,
-                    frameTable: frameTable,
-                    funcTable: funcTable,
-                    resourceTable: {
-                        lib: [],
-                        name: [],
-                        host: [],
-                        type: [],
-                        length: 0
-                    },
-                    nativeSymbols: {
-                        libIndex: [],
-                        address: [],
-                        name: [],
-                        functionSize: [],
-                        length: 0
-                    }
                 }]
             };
 
             // Add lengths
             profile.threads[0].samples.length = samples.stack.length;
-            profile.threads[0].stackTable.length = stackTable.frame.length;
-            profile.threads[0].frameTable.length = frameTable.func.length;
-            profile.threads[0].funcTable.length = funcTable.name.length;
+            profile.shared.stackTable.length = stackTable.frame.length;
+            profile.shared.frameTable.length = frameTable.func.length;
+            profile.shared.funcTable.length = funcTable.name.length;
+            profile.shared.sources.length = sourcesTable.uuid.length;
 
             return profile;
         }

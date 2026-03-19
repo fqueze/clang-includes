@@ -184,9 +184,15 @@ function convertToProfiler(sourceMarkers, inputFileName) {
     isJS: [],
     relevantForJS: [],
     resource: [],
-    fileName: [],
+    source: [],
     lineNumber: [],
     columnNumber: [],
+    length: 0
+  };
+
+  const sourcesTable = {
+    uuid: [],
+    filename: [],
     length: 0
   };
 
@@ -245,7 +251,12 @@ function convertToProfiler(sourceMarkers, inputFileName) {
     funcTable.isJS.push(false);
     funcTable.relevantForJS.push(false);
     funcTable.resource.push(-1);
-    funcTable.fileName.push(nameIndex);  // fileName is the same as name for our purposes
+    // Create a source entry for this function
+    const sourceIndex = sourcesTable.length;
+    sourcesTable.uuid.push(null);
+    sourcesTable.filename.push(nameIndex);
+    sourcesTable.length++;
+    funcTable.source.push(sourceIndex);
     funcTable.lineNumber.push(null);
     funcTable.columnNumber.push(null);
     funcTable.length++;
@@ -338,7 +349,7 @@ function convertToProfiler(sourceMarkers, inputFileName) {
       stackwalk: 0,
       debug: false,
       version: 28,
-      preprocessedProfileVersion: 57,
+      preprocessedProfileVersion: 60,
       categories: categories,
       markerSchema: [],
       sampleUnits: {
@@ -354,7 +365,19 @@ function convertToProfiler(sourceMarkers, inputFileName) {
     },
     libs: [],
     shared: {
-      stringArray: stringTable
+      stringArray: stringTable,
+      stackTable: stackTable,
+      frameTable: frameTable,
+      funcTable: funcTable,
+      resourceTable: resourceTable,
+      nativeSymbols: {
+        libIndex: [],
+        address: [],
+        name: [],
+        functionSize: [],
+        length: 0
+      },
+      sources: sourcesTable
     },
     threads: [
       {
@@ -378,17 +401,6 @@ function convertToProfiler(sourceMarkers, inputFileName) {
           category: [],
           length: 0
         },
-        stackTable: stackTable,
-        frameTable: frameTable,
-        funcTable: funcTable,
-        resourceTable: resourceTable,
-        nativeSymbols: {
-          libIndex: [],
-          address: [],
-          name: [],
-          functionSize: [],
-          length: 0
-        }
       }
     ]
   };
