@@ -357,7 +357,7 @@
         // Load the dashboard JSON
         async function loadData() {
             try {
-                const isFileProtocol = window.location.protocol === 'file:';
+              const isFileProtocol = window.location.protocol === 'file:';
                 const dataUrl = isFileProtocol
                     ? 'build-dashboard.json'
                     : 'https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/gecko.v2.try.latest.firefox.linux64-clang-includes-opt/artifacts/public/build/includes.json';
@@ -445,7 +445,9 @@
                    fileName.includes('/usr/lib/') ||
                    fileName.startsWith('/usr/') ||
                    fileName.includes('sysroot-') ||
-                   fileName.includes('/fetches/clang/');
+                   fileName.includes('/fetches/clang/') ||
+                   fileName.includes('/dist/system_wrappers/') ||
+                   fileName.includes('/dist/stl_wrappers/');
         }
 
         function getDirectIncluders(fileId) {
